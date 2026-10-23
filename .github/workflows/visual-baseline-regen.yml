@@ -1,0 +1,59 @@
+name: visual-baseline-regen
+
+# One-off generator, present only on the `chore/visual-baseline-regen` branch of
+# the fork — it is not part of pull request #424 and never reaches `main`.
+#
+# It runs the same steps, in the same pinned image, as `visual-tests.yml`, with
+# `--update-snapshots` so the PNGs are measured by the exact browser build and
+# font set that the visual regression check compares against. The baselines are
+# then taken from this run's artifact rather than hand-drawn, so a committed
+# pixel is a pixel CI itself reported.
+on:
+  push:
+    branches: [chore/visual-baseline-regen]
+
+permissions:
+  contents: read
+
+jobs:
+  regen:
+    name: regenerate visual baselines
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    container:
+      image: mcr.microsoft.com/playwright:v1.64.0-noble
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build
+        run: npm run build
+
+      - name: Regenerate snapshots
+        run: npm run test:visual:update
+
+      - name: Report which baselines changed
+        run: git status --porcelain tests/visual/__screenshots__
+
+      # Every PNG's pixel size, read from its IHDR chunk, so each regenerated
+      # baseline can be compared against the "Expected an image Wpx by Hpx,
+      # received Wpx by Hpx" line the failing run printed for the same case.
+      - name: Report regenerated dimensions
+        run: |
+          python3 - <<'PY'
+          import glob, struct
+          for path in sorted(glob.glob("tests/visual/__screenshots__/*/*.png")):
+              with open(path, "rb") as handle:
+                  header = handle.read(33)
+              width, height = struct.unpack(">II", header[16:24])
+              print(f"{path} {width}x{height}")
+          PY
+
+      - name: Upload regenerated baselines
+        uses: actions/upload-artifact@v4
+        with:
+          name: visual-baselines
+          path: tests/visual/__screenshots__/
+          retention-days: 14
