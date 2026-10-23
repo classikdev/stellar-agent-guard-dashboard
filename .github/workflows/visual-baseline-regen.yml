@@ -34,13 +34,18 @@ jobs:
       - name: Regenerate snapshots
         run: npm run test:visual:update
 
+      # The container's HOME is not the runner's, so git reports "dubious
+      # ownership" and exits 128 unless the path is allowed for this one command.
+      # A report must never cost the artifact, so both reports are !cancelled().
       - name: Report which baselines changed
-        run: git status --porcelain tests/visual/__screenshots__
+        if: ${{ !cancelled() }}
+        run: git -c safe.directory="$GITHUB_WORKSPACE" status --porcelain tests/visual/__screenshots__
 
       # Every PNG's pixel size, read from its IHDR chunk, so each regenerated
       # baseline can be compared against the "Expected an image Wpx by Hpx,
       # received Wpx by Hpx" line the failing run printed for the same case.
       - name: Report regenerated dimensions
+        if: ${{ !cancelled() }}
         run: |
           python3 - <<'PY'
           import glob, struct
@@ -52,6 +57,7 @@ jobs:
           PY
 
       - name: Upload regenerated baselines
+        if: ${{ !cancelled() }}
         uses: actions/upload-artifact@v4
         with:
           name: visual-baselines
